@@ -472,14 +472,15 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         "-i",
-        default="output/data.json",
+        required=True,
         help="Arquivo JSON de entrada. Padrão: output/data.json",
     )
 
     parser.add_argument(
         "--output",
         "-o",
-        default="output/metrics.jsonl",
+        #default="output/metrics.jsonl",
+        required=True,
         help="Arquivo JSONL de saída. Padrão: output/metrics.jsonl",
     )
 
