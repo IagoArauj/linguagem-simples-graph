@@ -38,7 +38,7 @@ class WorkflowState(TypedDict):
 def _router(feedback: dict[str, Any] | str) -> str:
     try:
         if feedback is not None and isinstance(feedback, dict):
-            return feedback["status"]
+            return str(feedback["status"]).lower()
         else:
             return "rejected"
     except KeyError:
@@ -97,11 +97,10 @@ class LinguagemSimplesGraph:
     @staticmethod
     def run(input_text: str, model_name: str):
         try:
-            model_name
             # if model name is defined but empty, throw
             if not model_name:
                 raise ValueError("Model name cannot be empty")
-        except ValueError as e:
+        except ValueError:
             raise ValueError("Model name is required")
         model = init_chat_model(
             model=model_name,
@@ -128,25 +127,29 @@ class LinguagemSimplesGraph:
             if "simple_simplification_feedback" in state and isinstance(state["simple_simplification_feedback"], dict) and state["simple_simplification_feedback"]["status"] == "rejected":
                 message_list = [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    SystemMessage(content="Nível de simplificação: simples"),
-                    HumanMessage(content=state["text"]),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Público geral
+Texto original: {state['text']}
+"""),
                     AIMessage(content=f"Simplificação realizada: {state['simple_simplification']}"),
-                    SystemMessage(content=f"Feedback para sua simplificação: {json.dumps(state['simple_simplification_feedback'])}. Melhore sua simplificação com base nele."),
+                    HumanMessage(content=f"Feedback para sua simplificação: {json.dumps(state['simple_simplification_feedback'])}. Melhore sua simplificação com base nele."),
                 ]
             else:
                 message_list = [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    SystemMessage(content="Nível de simplificação: simples"),
-                    HumanMessage(content=state["text"]),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Público geral
+Texto original: {state['text']}
+"""),
                 ]
 
             message = model.invoke(message_list)
 
             usage = get_token_usage(message)
 
-            return {"simple_simplification": message.content, "llm_calls": 1, "input_tokens": usage["input_tokens"], "output_tokens": usage["output_tokens"]}
+            return {"simple_simplification": message.content, "simple_attempts": 1, "llm_calls": 1, "input_tokens": usage["input_tokens"], "output_tokens": usage["output_tokens"]}
 
         def llm_moderate_simplificator(state: WorkflowState) -> dict[str, Any]:
             prompt = LinguagemSimplesGraph._load_prompt("prompts/simplificador.txt")
@@ -154,24 +157,29 @@ class LinguagemSimplesGraph:
             if "moderate_simplification_feedback" in state and isinstance(state["moderate_simplification_feedback"], dict) and state["moderate_simplification_feedback"]["status"] == "rejected":
                 message_list = [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    SystemMessage(content="Nível de simplificação: moderado"),
-                    HumanMessage(content=state["text"]),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Jornalistas e profissionais de comunicação.
+Texto original: {state['text']}
+"""),
                     AIMessage(content=f"Simplificação realizada: {state['moderate_simplification']}"),
-                    SystemMessage(content=f"Feedback para sua simplificação: {json.dumps(state['moderate_simplification_feedback'])}. Melhore sua simplificação com base nele."),
+                    HumanMessage(content=f"Feedback para sua simplificação: {json.dumps(state['moderate_simplification_feedback'])}. Melhore sua simplificação com base nele."),
                 ]
             else:
                 message_list = [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    SystemMessage(content="Nível de simplificação: moderado"),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Jornalistas e profissionais de comunicação.
+Texto original: {state['text']}
+"""),
                     HumanMessage(content=state["text"]),
                 ]
             message = model.invoke(message_list)
 
             usage = get_token_usage(message)
 
-            return {"moderate_simplification": message.content, "llm_calls": 1, "input_tokens": usage["input_tokens"], "output_tokens": usage["output_tokens"]}
+            return {"moderate_simplification": message.content, "moderate_attempts": 1, "llm_calls": 1, "input_tokens": usage["input_tokens"], "output_tokens": usage["output_tokens"]}
 
         def llm_aggressive_simplificator(state: WorkflowState) -> dict[str, Any]:
             prompt = LinguagemSimplesGraph._load_prompt("prompts/simplificador.txt")
@@ -179,33 +187,41 @@ class LinguagemSimplesGraph:
             if "aggressive_simplification_feedback" in state and isinstance(state["aggressive_simplification_feedback"], dict) and state["aggressive_simplification_feedback"]["status"] == "rejected":
                 message_list = [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    SystemMessage(content="Nível de simplificação: agressivo"),
-                    HumanMessage(content=state["text"]),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
+Texto original: {state['text']}
+"""),
                     AIMessage(content=f"Simplificação realizada: {state['aggressive_simplification']}"),
-                    SystemMessage(content=f"Feedback para sua simplificação: {json.dumps(state['aggressive_simplification_feedback'])}. Melhore sua simplificação com base nele."),
+                    HumanMessage(content=f"Feedback para sua simplificação: {json.dumps(state['aggressive_simplification_feedback'])}. Melhore sua simplificação com base nele."),
                 ]
             else:
                 message_list = [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    SystemMessage(content="Nível de simplificação: agressivo"),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
+Texto original: {state['text']}
+"""),
                     HumanMessage(content=state["text"]),
                 ]
             message = model.invoke(message_list)
 
             usage = get_token_usage(message)
 
-            return {"aggressive_simplification": message.content, "llm_calls": 1, "input_tokens": usage["input_tokens"], "output_tokens": usage["output_tokens"]}
+            return {"aggressive_simplification": message.content, "aggressive_attempts": 1, "llm_calls": 1, "input_tokens": usage["input_tokens"], "output_tokens": usage["output_tokens"]}
 
         def llm_simple_avaliator(state: WorkflowState) -> dict[str, Any]:
             prompt = LinguagemSimplesGraph._load_prompt("prompts/avaliador.txt")
             message = model.invoke(
                 [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    HumanMessage(content=f"Texto original: {state['text']}"),
-                    AIMessage(content=f"Texto simplificado: {state['simple_simplification']}"),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Público geral
+Texto original: {state['text']}
+Texto simplificado: {state['simple_simplification']}
+"""),
                 ]
             )
 
@@ -224,9 +240,12 @@ class LinguagemSimplesGraph:
             message = model.invoke(
                 [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    HumanMessage(content=state["text"]),
-                    AIMessage(content=state["moderate_simplification"]),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Jornalistas e profissionais de comunicação.
+Texto original: {state['text']}
+Texto simplificado: {state['moderate_simplification']}
+"""),
                 ]
             )
 
@@ -245,9 +264,12 @@ class LinguagemSimplesGraph:
             message = model.invoke(
                 [
                     SystemMessage(content=prompt),
-                    SystemMessage(content=f"Análise do texto original: {json.dumps(state['analysis'])}"),
-                    HumanMessage(content=state["text"]),
-                    AIMessage(content=state["aggressive_simplification"]),
+                    HumanMessage(content=f"""
+Análise do texto original: {json.dumps(state['analysis'])}
+Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
+Texto original: {state['text']}
+Texto simplificado: {state['aggressive_simplification']}
+"""),
                 ]
             )
 
@@ -296,25 +318,28 @@ class LinguagemSimplesGraph:
             status = _router(state["simple_simplification_feedback"])
             if status == "approved":
                 return "approved"
-            if state["simple_attempts"] < 3:
-                return "max_attempts"
-            return "rejected"
+            if state.get("simple_attempts", 0) < 3:
+                print("Simple simplification rejected, attempting again")
+                return "rejected"
+            return "max_attempts"
 
         def route_decision_moderate_feedback(state: WorkflowState) -> str:
             status = _router(state["moderate_simplification_feedback"])
             if status == "approved":
                 return "approved"
-            if state["moderate_attempts"] < 3:
-                return "max_attempts"
-            return "rejected"
+            if state.get("moderate_attempts", 0) < 3:
+                print("Moderate simplification rejected, attempting again")
+                return "rejected"
+            return "max_attempts"
 
         def route_decision_aggressive_feedback(state: WorkflowState) -> str:
             status = _router(state["aggressive_simplification_feedback"])
             if status == "approved":
                 return "approved"
-            if state["aggressive_attempts"] < 3:
-                return "max_attempts"
-            return "rejected"
+            if state.get("aggressive_attempts", 0) < 3:
+                print("Aggressive simplification rejected, attempting again")
+                return "rejected"
+            return "max_attempts"
 
         # WORKFLOW
         parallel_builder = StateGraph(WorkflowState)

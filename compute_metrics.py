@@ -55,6 +55,7 @@ def compute_nilc_metrix(
     text: str,
     nilc_metrix_folder: str | Path,
     script_to_run: str = "run_minimal.sh",
+    field_name: str | None = None,
 ) -> dict[str, Any]:
     """
     Executa o script do NILC-Metrix e transforma a saída entre '++'
@@ -76,6 +77,10 @@ def compute_nilc_metrix(
             f"O texto deve ser uma string, mas recebeu {type(text).__name__}."
         )
 
+    if text.strip() == "":
+        print(f"O texto está vazio: {field_name}")
+        return {}
+
     try:
         result = subprocess.run(
             ["bash", str(script_path), text],
@@ -88,7 +93,7 @@ def compute_nilc_metrix(
         )
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
-            "Erro ao executar o NILC-Metrix.\n"
+            f"Erro ao executar o NILC-Metrix para o texto \"{field_name}\".\n"
             f"Código de saída: {exc.returncode}\n"
             f"stdout:\n{exc.stdout}\n"
             f"stderr:\n{exc.stderr}"
@@ -256,6 +261,7 @@ def _compute_item_metrics(
                 item[field_name],
                 nilc_metrix_folder,
                 script_to_run,
+                field_name
             )
             future_to_stage[future] = stage_name
 
