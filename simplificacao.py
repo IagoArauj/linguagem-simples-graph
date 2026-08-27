@@ -129,7 +129,7 @@ class LinguagemSimplesGraph:
                     SystemMessage(content=prompt),
                     HumanMessage(content=f"""
 Análise do texto original: {json.dumps(state['analysis'])}
-Nível de simplificação: Público geral
+Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
 Texto original: {state['text']}
 """),
                     AIMessage(content=f"Simplificação realizada: {state['simple_simplification']}"),
@@ -140,7 +140,7 @@ Texto original: {state['text']}
                     SystemMessage(content=prompt),
                     HumanMessage(content=f"""
 Análise do texto original: {json.dumps(state['analysis'])}
-Nível de simplificação: Público geral
+Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
 Texto original: {state['text']}
 """),
                 ]
@@ -189,7 +189,7 @@ Texto original: {state['text']}
                     SystemMessage(content=prompt),
                     HumanMessage(content=f"""
 Análise do texto original: {json.dumps(state['analysis'])}
-Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
+Nível de simplificação: Público geral
 Texto original: {state['text']}
 """),
                     AIMessage(content=f"Simplificação realizada: {state['aggressive_simplification']}"),
@@ -200,7 +200,7 @@ Texto original: {state['text']}
                     SystemMessage(content=prompt),
                     HumanMessage(content=f"""
 Análise do texto original: {json.dumps(state['analysis'])}
-Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
+Nível de simplificação: Público geral
 Texto original: {state['text']}
 """),
                     HumanMessage(content=state["text"]),
@@ -218,7 +218,7 @@ Texto original: {state['text']}
                     SystemMessage(content=prompt),
                     HumanMessage(content=f"""
 Análise do texto original: {json.dumps(state['analysis'])}
-Nível de simplificação: Público geral
+Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
 Texto original: {state['text']}
 Texto simplificado: {state['simple_simplification']}
 """),
@@ -266,7 +266,7 @@ Texto simplificado: {state['moderate_simplification']}
                     SystemMessage(content=prompt),
                     HumanMessage(content=f"""
 Análise do texto original: {json.dumps(state['analysis'])}
-Nível de simplificação: Estudantes, acadêmicos e profissionais da área.
+Nível de simplificação: Público geral
 Texto original: {state['text']}
 Texto simplificado: {state['aggressive_simplification']}
 """),
