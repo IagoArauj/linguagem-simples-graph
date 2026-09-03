@@ -1,7 +1,7 @@
 [project]
 name = "linguagem-simples-graph"
 version = "0.1.0"
-description = "Add your description here"
+description = "Harness de simplificação e avaliação de textos jurídicos em português brasileiro"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,5 +11,17 @@ dependencies = [
     "langchain-openrouter>=0.2.6",
     "langgraph>=1.2.8",
     "nltk>=3.10.0",
+    "pydantic>=2.12.5",
+    "pyyaml>=6.0.2",
     "tqdm>=4.68.4",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"

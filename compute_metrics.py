@@ -158,11 +158,44 @@ def format_duration(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
+def _normalize_versioned_item(
+    item: dict[str, Any],
+    index: int,
+) -> dict[str, Any]:
+    """Converte o schema 1.0 para o formato consumido pelas métricas."""
+    if item.get("schema_version") != "1.0":
+        return item
+
+    branches = item.get("branches")
+    if not isinstance(branches, list):
+        raise ValueError(f"Item {index} sem uma lista válida de ramos.")
+
+    texts_by_branch: dict[str, str] = {}
+    for branch in branches:
+        if not isinstance(branch, dict):
+            raise ValueError(f"Item {index} possui ramo inválido.")
+        branch_id = branch.get("branch_id")
+        final_text = branch.get("final_text")
+        if isinstance(branch_id, str) and isinstance(final_text, str):
+            texts_by_branch[branch_id] = final_text
+
+    return {
+        "run_id": item.get("run_id"),
+        "document_id": item.get("document_id"),
+        "content_hash": item.get("content_hash"),
+        "text": item.get("original_text"),
+        "simple_simplification": texts_by_branch.get("simple"),
+        "moderate_simplification": texts_by_branch.get("moderate"),
+        "aggressive_simplification": texts_by_branch.get("aggressive"),
+    }
+
+
 def _validate_item(item: Any, index: int) -> dict[str, Any]:
-    """Valida um item do arquivo de entrada."""
+    """Valida e normaliza um item do arquivo de entrada."""
     if not isinstance(item, dict):
         raise ValueError(f"O item {index} deve ser um objeto JSON.")
 
+    item = _normalize_versioned_item(item, index)
     missing_fields = [
         field for field in REQUIRED_FIELDS if field not in item
     ]
@@ -241,7 +274,7 @@ def _compute_item_metrics(
     nilc_metrix_folder: str | Path,
     script_to_run: str,
     workers: int,
-    progress_bar: tqdm,
+    progress_bar: tqdm[Any],
     item_index: int,
     total_items: int,
 ) -> dict[str, Any]:
@@ -315,12 +348,29 @@ def compute_metrics(
         )
 
     with input_path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+        raw_content = file.read()
 
-    if not isinstance(data, list):
-        raise ValueError(
-            "O arquivo de entrada deve conter uma lista JSON."
-        )
+    try:
+        parsed = json.loads(raw_content)
+        if isinstance(parsed, list):
+            data = parsed
+        elif isinstance(parsed, dict):
+            # Um JSONL com uma única linha também é um objeto JSON válido.
+            data = [parsed]
+        else:
+            raise ValueError("A entrada deve conter objetos JSON.")
+    except json.JSONDecodeError:
+        data = []
+        for line_number, line in enumerate(raw_content.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"JSONL inválido na linha {line_number}: {input_path}"
+                ) from exc
+            data.append(record)
 
     total_items = len(data)
 
@@ -395,6 +445,9 @@ def compute_metrics(
 
                 record = {
                     "item_index": index,
+                    "run_id": item.get("run_id"),
+                    "document_id": item.get("document_id"),
+                    "content_hash": item.get("content_hash"),
                     "status": "success",
                     "processing_seconds": round(item_elapsed, 3),
                     **metrics,

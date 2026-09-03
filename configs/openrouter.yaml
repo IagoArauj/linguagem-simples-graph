@@ -1,0 +1,67 @@
+schema_version: "1.0"
+
+corpus:
+  path: input/corpus.json
+  id_field: id
+  text_field: juridico
+
+execution:
+  directory: output/runs
+  results_filename: results.jsonl
+  metadata_filename: metadata_per_text.csv
+
+workflow:
+  max_revisions: 3
+  branches:
+    - branch_id: simple
+      target_audience: "Estudantes, acadêmicos e profissionais da área."
+      intensity: light
+    - branch_id: moderate
+      target_audience: "Jornalistas e profissionais de comunicação."
+      intensity: moderate
+    - branch_id: aggressive
+      target_audience: "Público geral"
+      intensity: strong
+
+prompts:
+  analyzer: prompts/analisador.txt
+  simplifier: prompts/simplificador.txt
+  evaluator: prompts/avaliador.txt
+
+models:
+  analyzer:
+    name: qwen/qwen3-32b
+    provider: openrouter
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    request_timeout_seconds: 60
+    technical_retries: 2
+    retry_backoff_seconds: 0.5
+    temperature: 0.1
+    max_tokens: 4096
+    top_p: 1.0
+    supports_structured_output: false
+  simplifier:
+    name: qwen/qwen3-32b
+    provider: openrouter
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    request_timeout_seconds: 60
+    technical_retries: 2
+    retry_backoff_seconds: 0.5
+    temperature: 0.3
+    max_tokens: 4096
+    top_p: 1.0
+    supports_structured_output: false
+  evaluator:
+    name: qwen/qwen3-32b
+    provider: openrouter
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    request_timeout_seconds: 60
+    technical_retries: 2
+    retry_backoff_seconds: 0.5
+    temperature: 0.0
+    max_tokens: 4096
+    top_p: 1.0
+    supports_structured_output: false
