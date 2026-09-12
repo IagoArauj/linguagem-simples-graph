@@ -7,7 +7,7 @@ Workflow para analisar, simplificar e avaliar textos português brasileiro. O si
 Para cada documento do corpus, o sistema executa estas etapas:
 
 1. **Análise linguística e de segurança**: identifica dificuldades de compreensão, informações que devem ser preservadas e conteúdo que não pode ser simplificado. Caso o texto de entrada não possa ser simplificado por conter um conteúdo com discurso de ódio, o sistema retornará o motivo.
-2. **Simplificação em paralelo**: gera 4 versões de simplificação para cada documento.
+2. **Simplificação em paralelo**: gera três versões de simplificação para cada documento.
 3. **Avaliação**: verifica preservação semântica, legibilidade, coerência e adequação ao público.
 4. **Revisão**: uma versão rejeitada volta ao simplificador com o feedback do avaliador, até atingir aprovação ou o limite configurado.
 5. **Persistência**: salva resultados, tentativas, uso de tokens, manifesto e metadados da execução.
@@ -46,6 +46,9 @@ core/
 config.py                    Carregamento YAML, manifesto e retomada
 configs/
   openrouter.yaml            Configuração para OpenRouter
+  openrouter_porsimplessent.yaml  OpenRouter com o corpus PorSimplesSent JSONL
+  openrouter_porsimplessent_nemotron.yaml  PorSimplesSent com NVIDIA Nemotron 3 Nano
+  openrouter_porsimplessent_mistral_nemo.yaml  PorSimplesSent com Mistral Nemo
   hpc.yaml                   Modelo de configuração para ambiente HPC
 prompts/
   analisador.txt
@@ -281,7 +284,30 @@ Exemplo com os campos padrão:
 ]
 ```
 
-O sistema preserva o `id` como `document_id` e calcula um hash SHA-256 do conteúdo. Entradas malformadas falham antes da inicialização dos modelos.
+O sistema preserva o identificador configurado como `document_id` e calcula um hash SHA-256 do conteúdo. Identificadores inteiros, como `production_id`, são normalizados para texto. Entradas malformadas falham antes da inicialização dos modelos.
+
+Também são aceitos corpora JSONL, com um documento JSON por linha. Para executar o corpus PorSimplesSent com OpenRouter:
+
+```sh
+uv run --env-file .env main.py \
+  --config configs/openrouter_porsimplessent.yaml
+```
+
+Essa configuração usa `production_id` como identificador, `original_text` como entrada do workflow e grava os resultados em `output/porsimplessent-runs/`.
+
+Há também configurações específicas para os modelos NVIDIA Nemotron 3 Nano e Mistral Nemo:
+
+```sh
+uv run --env-file .env main.py \
+  --config configs/openrouter_porsimplessent_nemotron.yaml
+```
+
+```sh
+uv run --env-file .env main.py \
+  --config configs/openrouter_porsimplessent_mistral_nemo.yaml
+```
+
+As duas configurações solicitam saída estruturada nativa do analisador e do avaliador. O simplificador continua configurado para texto livre porque esse nó deve retornar apenas o texto simplificado, sem um schema JSON. Cada modelo grava resultados em um diretório próprio para evitar misturar execuções.
 
 ## Resultados e manifesto
 

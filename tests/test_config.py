@@ -14,6 +14,7 @@ from config import (
     prepare_run_directory,
 )
 from core.schemas import ModelRole, TargetAudience
+from main import load_corpus
 
 
 def test_paths_are_resolved_from_project_root() -> None:
@@ -25,6 +26,65 @@ def test_paths_are_resolved_from_project_root() -> None:
     assert source == PROJECT_ROOT / "configs/openrouter.yaml"
     assert config.corpus.path == PROJECT_ROOT / "input/corpus.json"
     assert config.prompts.analyzer == PROJECT_ROOT / "prompts/analisador.txt"
+
+
+def test_porsimplessent_jsonl_configuration_loads_corpus() -> None:
+    config, _ = load_effective_config(
+        "configs/openrouter_porsimplessent.yaml",
+        environ={},
+    )
+
+    documents = load_corpus(config)
+
+    assert len(documents) == 154
+    assert documents[0].document_id == "1"
+    assert documents[0].text.startswith("O ano era 1978.")
+    assert {"natural_text", "strong_text"} <= documents[0].metadata.keys()
+
+
+@pytest.mark.parametrize(
+    ("config_path", "expected_model", "expected_directory"),
+    [
+        (
+            "configs/openrouter_porsimplessent_nemotron.yaml",
+            "nvidia/nemotron-3-nano-30b-a3b",
+            "output/porsimplessent-nemotron-runs",
+        ),
+        (
+            "configs/openrouter_porsimplessent_mistral_nemo.yaml",
+            "mistralai/mistral-nemo",
+            "output/porsimplessent-mistral-nemo-runs",
+        ),
+    ],
+)
+def test_model_specific_porsimplessent_configs(
+    config_path: str,
+    expected_model: str,
+    expected_directory: str,
+) -> None:
+    config, _ = load_effective_config(config_path, environ={})
+
+    assert all(
+        config.models.for_role(role).name == expected_model
+        for role in ModelRole
+    )
+    assert config.models.analyzer.supports_structured_output is True
+    assert config.models.simplifier.supports_structured_output is False
+    assert config.models.evaluator.supports_structured_output is True
+    assert config.execution.directory == PROJECT_ROOT / expected_directory
+
+
+def test_model_specific_porsimplessent_output_directories_are_distinct() -> None:
+    nemotron, _ = load_effective_config(
+        "configs/openrouter_porsimplessent_nemotron.yaml",
+        environ={},
+    )
+    mistral, _ = load_effective_config(
+        "configs/openrouter_porsimplessent_mistral_nemo.yaml",
+        environ={},
+    )
+
+    assert nemotron.execution.directory != mistral.execution.directory
 
 
 def test_precedence_is_cli_then_environment_then_yaml() -> None:

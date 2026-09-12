@@ -259,10 +259,16 @@ class DocumentInput(ContractModel):
     ) -> DocumentInput:
         if not isinstance(item, dict):
             raise TypeError("Cada item do corpus deve ser um objeto.")
-        document_id = item.get(id_field)
+        raw_document_id = item.get(id_field)
         text = item.get(text_field)
-        if not isinstance(document_id, str):
-            raise ValueError(f"O campo {id_field!r} deve ser uma string.")
+        if isinstance(raw_document_id, str):
+            document_id = raw_document_id
+        elif isinstance(raw_document_id, int) and not isinstance(raw_document_id, bool):
+            document_id = str(raw_document_id)
+        else:
+            raise ValueError(
+                f"O campo {id_field!r} deve ser uma string ou um número inteiro."
+            )
         if not isinstance(text, str):
             raise ValueError(f"O campo {text_field!r} deve ser uma string.")
         metadata = {

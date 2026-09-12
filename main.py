@@ -122,11 +122,27 @@ def ensure_metadata_header(path: Path) -> None:
 
 
 def load_corpus(config: EffectiveConfig) -> list[DocumentInput]:
-    with config.corpus.path.open("r", encoding="utf-8") as file:
-        raw_corpus = json.load(file)
-    if not isinstance(raw_corpus, list):
-        raise ValueError("O corpus deve ser uma lista de documentos.")
-    return [
+    corpus_path = config.corpus.path
+    if corpus_path.suffix.lower() == ".jsonl":
+        raw_corpus: list[object] = []
+        with corpus_path.open("r", encoding="utf-8") as file:
+            for line_number, line in enumerate(file, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    raw_corpus.append(json.loads(line))
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"JSONL inválido em {corpus_path}, linha {line_number}."
+                    ) from exc
+    else:
+        with corpus_path.open("r", encoding="utf-8") as file:
+            loaded_corpus = json.load(file)
+        if not isinstance(loaded_corpus, list):
+            raise ValueError("O corpus JSON deve ser uma lista de documentos.")
+        raw_corpus = loaded_corpus
+
+    documents = [
         DocumentInput.from_corpus_item(
             item,
             id_field=config.corpus.id_field,
@@ -134,6 +150,10 @@ def load_corpus(config: EffectiveConfig) -> list[DocumentInput]:
         )
         for item in raw_corpus
     ]
+    document_ids = [document.document_id for document in documents]
+    if len(document_ids) != len(set(document_ids)):
+        raise ValueError("O corpus possui identificadores de documento duplicados.")
+    return documents
 
 
 def summarize_results(

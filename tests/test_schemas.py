@@ -33,13 +33,24 @@ def test_document_preserves_corpus_id_and_generates_hash() -> None:
     [
         {"id": "", "juridico": "Texto"},
         {"id": "DOC", "juridico": ""},
-        {"id": 1, "juridico": "Texto"},
+        {"id": True, "juridico": "Texto"},
+        {"id": 1.5, "juridico": "Texto"},
         {"id": "DOC", "juridico": None},
     ],
 )
 def test_malformed_document_is_rejected(item: dict[str, object]) -> None:
     with pytest.raises((ValidationError, ValueError)):
         DocumentInput.from_corpus_item(item)
+
+
+def test_integer_corpus_id_is_normalized_to_string() -> None:
+    document = DocumentInput.from_corpus_item(
+        {"production_id": 123, "original_text": "Texto."},
+        id_field="production_id",
+        text_field="original_text",
+    )
+
+    assert document.document_id == "123"
 
 
 def test_unknown_structured_values_are_rejected() -> None:
