@@ -71,6 +71,19 @@ def test_model_specific_porsimplessent_configs(
     assert config.models.analyzer.supports_structured_output is True
     assert config.models.simplifier.supports_structured_output is False
     assert config.models.evaluator.supports_structured_output is True
+    if expected_model == "nvidia/nemotron-3-nano-30b-a3b":
+        assert all(
+            config.models.for_role(role).reasoning_effort.value == "none"
+            for role in ModelRole
+        )
+        assert config.models.analyzer.max_tokens == 2048
+        assert config.models.simplifier.max_tokens == 4096
+        assert config.models.evaluator.max_tokens == 2048
+    else:
+        assert all(
+            config.models.for_role(role).reasoning_effort is None
+            for role in ModelRole
+        )
     assert config.execution.directory == PROJECT_ROOT / expected_directory
 
 

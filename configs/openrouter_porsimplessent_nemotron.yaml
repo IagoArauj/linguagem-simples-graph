@@ -38,8 +38,10 @@ models:
     technical_retries: 2
     retry_backoff_seconds: 1.0
     temperature: 0.0
-    max_tokens: 8192
+    max_tokens: 2048
     top_p: 1.0
+    # O nemotron "come" os tokens com o reasoning, não sobrando para gerar as simplificações
+    reasoning_effort: none
     supports_structured_output: true
   simplifier:
     name: nvidia/nemotron-3-nano-30b-a3b
@@ -50,8 +52,9 @@ models:
     technical_retries: 2
     retry_backoff_seconds: 1.0
     temperature: 0.1
-    max_tokens: 8192
+    max_tokens: 4096
     top_p: 1.0
+    reasoning_effort: none
     supports_structured_output: false
   evaluator:
     name: nvidia/nemotron-3-nano-30b-a3b
@@ -62,6 +65,7 @@ models:
     technical_retries: 2
     retry_backoff_seconds: 1.0
     temperature: 0.0
-    max_tokens: 8192
+    max_tokens: 2048
     top_p: 1.0
+    reasoning_effort: none
     supports_structured_output: true

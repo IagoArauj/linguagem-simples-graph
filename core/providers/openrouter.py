@@ -23,6 +23,7 @@ class OpenRouterModelClient(OpenAICompatibleModelClient):
         temperature: float | None = None,
         max_tokens: int | None = None,
         top_p: float | None = None,
+        reasoning_effort: str | None = None,
         supports_structured_output: bool = False,
         default_headers: Mapping[str, str] | None = None,
     ) -> None:
@@ -38,6 +39,7 @@ class OpenRouterModelClient(OpenAICompatibleModelClient):
             temperature=temperature,
             max_tokens=max_tokens,
             top_p=top_p,
+            reasoning_effort=reasoning_effort,
             supports_structured_output=supports_structured_output,
             provider_name="openrouter",
             default_headers=default_headers,

@@ -9,6 +9,7 @@ from core.schemas import (
     BranchResult,
     DocumentInput,
     ExecutionStatus,
+    ModelSettings,
     QualityVerdict,
     RunConfig,
     SimplificationIntensity,
@@ -66,6 +67,16 @@ def test_unknown_structured_values_are_rejected() -> None:
                     }
                 ],
             }
+        )
+
+
+def test_unknown_reasoning_effort_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        ModelSettings(
+            name="modelo",
+            base_url="http://localhost:8000/v1",
+            provider="openai_compatible",
+            reasoning_effort="arbitrary",
         )
 
 

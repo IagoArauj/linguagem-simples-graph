@@ -140,6 +140,8 @@ models:
 
 `api_key_env` contém somente o nome da variável de ambiente, nunca o valor da credencial. Chaves desconhecidas e valores inválidos são rejeitados antes de qualquer chamada ao modelo.
 
+Para modelos de raciocínio opcional, `reasoning_effort` aceita `none`, `minimal`, `low`, `medium`, `high`, `xhigh` ou `max`. No OpenRouter, `none` envia `reasoning: {effort: none}` e impede que o raciocínio interno consuma o limite destinado à resposta final. Não use `none` em modelos cujo raciocínio seja obrigatório.
+
 ### Providers de modelo
 
 O workflow não instancia modelos diretamente. Uma fábrica cria um cliente para cada papel antes do processamento do corpus, e todos os nós usam a mesma interface normalizada.
@@ -214,6 +216,7 @@ Variáveis por papel:
 - `LSG_<PAPEL>_RETRY_BACKOFF_SECONDS`
 - `LSG_<PAPEL>_MAX_TOKENS`
 - `LSG_<PAPEL>_TOP_P`
+- `LSG_<PAPEL>_REASONING_EFFORT`
 - `LSG_<PAPEL>_SUPPORTS_STRUCTURED_OUTPUT`
 
 `LSG_<PAPEL>_MAX_RETRIES` continua aceito como alias legado de `LSG_<PAPEL>_TECHNICAL_RETRIES`.
@@ -307,7 +310,7 @@ uv run --env-file .env main.py \
   --config configs/openrouter_porsimplessent_mistral_nemo.yaml
 ```
 
-As duas configurações solicitam saída estruturada nativa do analisador e do avaliador. O simplificador continua configurado para texto livre porque esse nó deve retornar apenas o texto simplificado, sem um schema JSON. Cada modelo grava resultados em um diretório próprio para evitar misturar execuções.
+As duas configurações solicitam saída estruturada nativa do analisador e do avaliador. O simplificador continua configurado para texto livre porque esse nó deve retornar apenas o texto simplificado, sem um schema JSON. A configuração do Nemotron também desativa seu raciocínio opcional com `reasoning_effort: none`, evitando respostas vazias ou interrompidas depois de consumir o limite com tokens de raciocínio. Cada modelo grava resultados em um diretório próprio para evitar misturar execuções.
 
 ## Resultados e manifesto
 
@@ -393,14 +396,13 @@ Os testes verificam:
 
 ## Métricas
 
-`compute_metrics.py` aceita listas JSON legadas e o formato JSONL produzido pelo workflow. Para computar as métricas, é necessária a instalação do pacote de métricas [NILC-Metrix](https://doi.org/10.1007/s10579-023-09693-w), disponível [neste repositório do GitHub](https://github.com/sidleal/nilcmetrix).
+`compute_metrics.py` exige um arquivo de entrada e aceita listas JSON ou o JSONL produzido pelo workflow. Se `--output` for omitido, o resultado será salvo como `metrics.jsonl` na mesma pasta da entrada. Resultados com apenas alguns ramos válidos recebem `status: partial`, e somente as simplificações disponíveis são processadas. Documentos sem nenhuma simplificação válida recebem `status: skipped` e não interrompem a execução, mesmo com `--fail-fast`. Para computar as métricas, é necessária a instalação do pacote de métricas [NILC-Metrix](https://doi.org/10.1007/s10579-023-09693-w), disponível [neste repositório do GitHub](https://github.com/sidleal/nilcmetrix).
 
 Exemplo:
 
 ```sh
 uv run compute_metrics.py \
   --input output/runs/UUID_DA_EXECUCAO/results.jsonl \
-  --output output/runs/UUID_DA_EXECUCAO/metrics.jsonl \
   --nilc-metrix-folder /caminho/para/nilc-metrix
 ```
 

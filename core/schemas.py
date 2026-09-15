@@ -51,6 +51,16 @@ class ModelProvider(StrEnum):
     SIMULATED = "simulated"
 
 
+class ReasoningEffort(StrEnum):
+    NONE = "none"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
+
+
 class TargetAudience(StrEnum):
     DOMAIN_EXPERTS = "Estudantes, acadêmicos e profissionais da área."
     COMMUNICATION_PROFESSIONALS = "Jornalistas e profissionais de comunicação."
@@ -131,6 +141,7 @@ class ModelSettings(ContractModel):
     temperature: float = Field(default=0.3, ge=0, le=2)
     max_tokens: PositiveInt | None = None
     top_p: float | None = Field(default=None, ge=0, le=1)
+    reasoning_effort: ReasoningEffort | None = None
     supports_structured_output: bool = False
 
     @model_validator(mode="after")

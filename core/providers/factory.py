@@ -57,6 +57,12 @@ class ModelClientFactory:
         temperature = _optional_float(getattr(settings, "temperature", None))
         max_tokens = _optional_int(getattr(settings, "max_tokens", None))
         top_p = _optional_float(getattr(settings, "top_p", None))
+        reasoning_value = getattr(settings, "reasoning_effort", None)
+        reasoning_effort = (
+            str(getattr(reasoning_value, "value", reasoning_value))
+            if reasoning_value is not None
+            else None
+        )
         supports_structured_output = bool(
             getattr(settings, "supports_structured_output", False)
         )
@@ -75,6 +81,7 @@ class ModelClientFactory:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 top_p=top_p,
+                reasoning_effort=reasoning_effort,
                 supports_structured_output=supports_structured_output,
             )
         if provider in {"openai_compatible", "openai-compatible", "local"}:
@@ -88,6 +95,7 @@ class ModelClientFactory:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 top_p=top_p,
+                reasoning_effort=reasoning_effort,
                 supports_structured_output=supports_structured_output,
             )
         if provider in {"simulated", "mock", "fake"}:

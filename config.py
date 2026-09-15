@@ -148,6 +148,7 @@ def _environment_overrides(environ: Mapping[str, str]) -> list[tuple[tuple[str, 
             "RETRY_BACKOFF_SECONDS": ("retry_backoff_seconds", float),
             "MAX_TOKENS": ("max_tokens", int),
             "TOP_P": ("top_p", float),
+            "REASONING_EFFORT": ("reasoning_effort", str),
             "SUPPORTS_STRUCTURED_OUTPUT": (
                 "supports_structured_output",
                 lambda value: value.strip().lower() in {"1", "true", "yes", "on"},

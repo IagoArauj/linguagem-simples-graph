@@ -21,14 +21,12 @@ except ImportError as exc:
 
 
 REQUIRED_FIELDS = (
-    "text",
     "simple_simplification",
     "moderate_simplification",
     "aggressive_simplification",
 )
 
 STAGES = (
-    ("original", "text"),
     ("simple_simplification", "simple_simplification"),
     ("moderate_simplification", "moderate_simplification"),
     ("aggressive_simplification", "aggressive_simplification"),
@@ -183,7 +181,6 @@ def _normalize_versioned_item(
         "run_id": item.get("run_id"),
         "document_id": item.get("document_id"),
         "content_hash": item.get("content_hash"),
-        "text": item.get("original_text"),
         "simple_simplification": texts_by_branch.get("simple"),
         "moderate_simplification": texts_by_branch.get("moderate"),
         "aggressive_simplification": texts_by_branch.get("aggressive"),
@@ -209,7 +206,7 @@ def _validate_item(item: Any, index: int) -> dict[str, Any]:
     invalid_fields = [
         field
         for field in REQUIRED_FIELDS
-        if not isinstance(item[field], str)
+        if item[field] is not None and not isinstance(item[field], str)
     ]
 
     if invalid_fields:
@@ -261,7 +258,7 @@ def _load_completed_indices(output_path: Path) -> set[int]:
 
             if (
                 isinstance(record, dict)
-                and record.get("status") == "success"
+                and record.get("status") in {"success", "partial", "skipped"}
                 and isinstance(record.get("item_index"), int)
             ):
                 completed.add(record["item_index"])
@@ -279,7 +276,7 @@ def _compute_item_metrics(
     total_items: int,
 ) -> dict[str, Any]:
     """
-    Calcula as quatro variantes de um item, executando até ``workers``
+    Calcula as três simplificações de um item, executando até ``workers``
     scripts simultaneamente.
     """
     metrics: dict[str, Any] = {}
@@ -288,7 +285,13 @@ def _compute_item_metrics(
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_stage: dict[Future[dict[str, Any]], str] = {}
 
-        for stage_name, field_name in STAGES:
+        available_stages = [
+            (stage_name, field_name)
+            for stage_name, field_name in STAGES
+            if isinstance(item[field_name], str) and item[field_name].strip()
+        ]
+
+        for stage_name, field_name in available_stages:
             future = executor.submit(
                 compute_nilc_metrix,
                 item[field_name],
@@ -305,21 +308,21 @@ def _compute_item_metrics(
 
             progress_bar.set_description(
                 f"Item {item_index}/{total_items} "
-                f"| métricas {completed_stages}/{len(STAGES)}"
+                f"| métricas {completed_stages}/{len(available_stages)}"
             )
 
     # Mantém a ordem estável das chaves no JSONL.
     return {
         stage_name: metrics[stage_name]
-        for stage_name, _ in STAGES
+        for stage_name, _ in available_stages
     }
 
 
 def compute_metrics(
     nilc_metrix_folder: str | Path,
+    input_file: str | Path,
     script_to_run: str = "run_minimal.sh",
-    input_file: str | Path = "output/data.json",
-    output_file: str | Path = "output/metrics.jsonl",
+    output_file: str | Path | None = None,
     *,
     workers: int = 2,
     append: bool = False,
@@ -327,10 +330,10 @@ def compute_metrics(
     fail_fast: bool = False,
 ) -> None:
     """
-    Calcula métricas para o texto original e para as três simplificações.
+    Calcula métricas somente para as três simplificações.
 
-    O paralelismo ocorre dentro de cada item: original, simples, moderada e
-    agressiva podem ser processadas simultaneamente.
+    O paralelismo ocorre dentro de cada item: as simplificações simples,
+    moderada e agressiva podem ser processadas simultaneamente.
 
     Cada item concluído é imediatamente gravado e sincronizado no JSONL.
     """
@@ -340,7 +343,14 @@ def compute_metrics(
         )
 
     input_path = Path(input_file).expanduser().resolve()
-    output_path = Path(output_file).expanduser().resolve()
+    output_path = (
+        Path(output_file).expanduser().resolve()
+        if output_file is not None
+        else input_path.parent / "metrics.jsonl"
+    )
+
+    if input_path == output_path:
+        raise ValueError("Os arquivos de entrada e saída devem ser diferentes.")
 
     if not input_path.is_file():
         raise FileNotFoundError(
@@ -404,8 +414,10 @@ def compute_metrics(
 
     start_time = time.perf_counter()
     successful_items = 0
+    partial_items = 0
     failed_items = 0
     skipped_items = len(completed_indices)
+    skipped_without_text = 0
 
     print(f"Itens encontrados: {total_items}")
     print(f"Itens já concluídos: {skipped_items}")
@@ -430,6 +442,37 @@ def compute_metrics(
 
             try:
                 item = _validate_item(raw_item, index)
+                available_stages = [
+                    stage_name
+                    for stage_name, field_name in STAGES
+                    if isinstance(item[field_name], str) and item[field_name].strip()
+                ]
+                missing_stages = [
+                    stage_name
+                    for stage_name, _ in STAGES
+                    if stage_name not in available_stages
+                ]
+
+                if not available_stages:
+                    skipped_without_text += 1
+                    item_elapsed = time.perf_counter() - item_start_time
+                    _write_jsonl_record(
+                        output,
+                        {
+                            "item_index": index,
+                            "run_id": item.get("run_id"),
+                            "document_id": item.get("document_id"),
+                            "content_hash": item.get("content_hash"),
+                            "status": "skipped",
+                            "reason": "no_valid_simplifications",
+                            "processing_seconds": round(item_elapsed, 3),
+                            "missing_stages": missing_stages,
+                        },
+                    )
+                    progress_bar.write(
+                        f"Item {index} ignorado: nenhuma simplificação válida."
+                    )
+                    continue
 
                 metrics = _compute_item_metrics(
                     item=item,
@@ -448,13 +491,17 @@ def compute_metrics(
                     "run_id": item.get("run_id"),
                     "document_id": item.get("document_id"),
                     "content_hash": item.get("content_hash"),
-                    "status": "success",
+                    "status": "partial" if missing_stages else "success",
                     "processing_seconds": round(item_elapsed, 3),
+                    "missing_stages": missing_stages,
                     **metrics,
                 }
 
                 _write_jsonl_record(output, record)
-                successful_items += 1
+                if missing_stages:
+                    partial_items += 1
+                else:
+                    successful_items += 1
 
             except Exception as exc:
                 failed_items += 1
@@ -500,6 +547,8 @@ def compute_metrics(
     print(f"Itens encontrados: {total_items}")
     print(f"Itens ignorados por já estarem concluídos: {skipped_items}")
     print(f"Itens processados com sucesso nesta execução: {successful_items}")
+    print(f"Itens processados parcialmente nesta execução: {partial_items}")
+    print(f"Itens ignorados sem simplificações válidas: {skipped_without_text}")
     print(f"Itens com erro nesta execução: {failed_items}")
     print(f"Tempo total desta execução: {format_duration(total_elapsed)}")
     print(f"Média por item: {format_duration(average_time)}")
@@ -509,8 +558,8 @@ def compute_metrics(
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Calcula métricas NILC-Metrix para textos originais e "
-            "simplificados, com paralelismo e retomada."
+            "Calcula métricas NILC-Metrix para textos simplificados, "
+            "com paralelismo e retomada."
         )
     )
 
@@ -532,15 +581,16 @@ def parse_arguments() -> argparse.Namespace:
         "--input",
         "-i",
         required=True,
-        help="Arquivo JSON de entrada. Padrão: output/data.json",
+        help="Arquivo JSON ou JSONL de entrada.",
     )
 
     parser.add_argument(
         "--output",
         "-o",
-        #default="output/metrics.jsonl",
-        required=True,
-        help="Arquivo JSONL de saída. Padrão: output/metrics.jsonl",
+        help=(
+            "Arquivo JSONL de saída. Quando omitido, usa metrics.jsonl "
+            "na mesma pasta da entrada."
+        ),
     )
 
     parser.add_argument(
@@ -549,7 +599,7 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         choices=range(1, len(STAGES) + 1),
         default=2,
-        metavar="{1,2,3,4}",
+        metavar="{1,2,3}",
         help=(
             "Quantidade de métricas executadas simultaneamente por item. "
             "Padrão: 2"
@@ -567,7 +617,7 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help=(
             "Continua um processamento anterior, ignorando os itens que já "
-            "possuem status success no JSONL."
+            "possuem status success, partial ou skipped no JSONL."
         ),
     )
 

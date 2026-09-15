@@ -147,6 +147,7 @@ def test_openai_adapter_uses_explicit_settings_and_disables_sdk_retries(
         temperature=0.2,
         max_tokens=512,
         top_p=0.9,
+        reasoning_effort="none",
     )
 
     response = client.invoke([HumanMessage(content="Texto simples")])
@@ -158,6 +159,7 @@ def test_openai_adapter_uses_explicit_settings_and_disables_sdk_retries(
     assert initialization["temperature"] == 0.2
     assert initialization["max_completion_tokens"] == 512
     assert initialization["top_p"] == 0.9
+    assert initialization["extra_body"] == {"reasoning": {"effort": "none"}}
     assert response.usage == TokenUsage(4, 2, 6)
     assert response.request_id == "request-123"
     assert response.finish_reason == "stop"

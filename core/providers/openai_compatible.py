@@ -38,6 +38,7 @@ class OpenAICompatibleModelClient(RetryingModelClient):
         temperature: float | None = None,
         max_tokens: int | None = None,
         top_p: float | None = None,
+        reasoning_effort: str | None = None,
         supports_structured_output: bool = False,
         provider_name: str = "openai_compatible",
         default_headers: Mapping[str, str] | None = None,
@@ -54,6 +55,11 @@ class OpenAICompatibleModelClient(RetryingModelClient):
         )
         self.provider_name = provider_name
         self.supports_structured_output = supports_structured_output
+        model_kwargs = (
+            {"extra_body": {"reasoning": {"effort": reasoning_effort}}}
+            if reasoning_effort is not None
+            else {}
+        )
         try:
             self._chat = ChatOpenAI(
                 model=model,
@@ -65,6 +71,7 @@ class OpenAICompatibleModelClient(RetryingModelClient):
                 max_completion_tokens=max_tokens,
                 top_p=top_p,
                 default_headers=default_headers,
+                **model_kwargs,
             )
         except Exception as exc:
             raise ConfigurationError(f"Configuração inválida de {provider_name}: {exc}") from exc
