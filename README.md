@@ -396,6 +396,20 @@ Os testes verificam:
 
 ## Métricas
 
+### BERTScore, ROUGE-L e SARI
+
+O módulo `metrics.semantic` usa os manifestos para comparar cada experimento com as referências humanas do corpus. O BERTScore usa XLM-R em português e cache persistente, sem chamadas a APIs de geração.
+
+```sh
+uv sync --extra metrics
+uv run --extra metrics python -m metrics.semantic \
+  --run-dir output/porsimplessent-runs/6eea9265-437d-4e9c-bc16-dcd0a94cbcb8
+```
+
+Produz `human_bertscore.csv` na pasta do corpus e `semantic_metrics.csv` em cada pasta de experimento. Consulte [metrics/README.md](metrics/README.md) para comparações, cache, opções de modelo e limitações de comprimento dos textos.
+
+### NILC-Metrix
+
 `compute_metrics.py` exige um arquivo de entrada e aceita listas JSON ou o JSONL produzido pelo workflow. Se `--output` for omitido, o resultado será salvo como `metrics.jsonl` na mesma pasta da entrada. Resultados com apenas alguns ramos válidos recebem `status: partial`, e somente as simplificações disponíveis são processadas. Documentos sem nenhuma simplificação válida recebem `status: skipped` e não interrompem a execução, mesmo com `--fail-fast`. Para computar as métricas, é necessária a instalação do pacote de métricas [NILC-Metrix](https://doi.org/10.1007/s10579-023-09693-w), disponível [neste repositório do GitHub](https://github.com/sidleal/nilcmetrix).
 
 Exemplo:
