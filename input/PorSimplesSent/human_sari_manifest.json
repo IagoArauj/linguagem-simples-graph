@@ -1,0 +1,50 @@
+{
+  "metrics_version": "1.0",
+  "created_at": "2026-09-29T12:34:45.542809+00:00",
+  "corpus_path": "/Users/iagoao/projects/linguagem-simples-graph/input/PorSimplesSent/corpus.jsonl",
+  "corpus_sha256": "7c0dee939979842cb9174c0c032b260421ed41056cded2c93436cfa37b819a2a",
+  "documents": 154,
+  "scale": [
+    0,
+    100
+  ],
+  "aggregation": "macro mean per document",
+  "experiments": [
+    {
+      "id": "copy_natural",
+      "label": "Copy baseline",
+      "source": "original_text",
+      "prediction": "original_text",
+      "reference": "natural_text"
+    },
+    {
+      "id": "copy_strong",
+      "label": "Copy baseline Strong",
+      "source": "original_text",
+      "prediction": "original_text",
+      "reference": "strong_text"
+    },
+    {
+      "id": "natural_to_strong",
+      "label": "Human Natural → Strong",
+      "source": "original_text",
+      "prediction": "natural_text",
+      "reference": "strong_text"
+    },
+    {
+      "id": "strong_to_natural",
+      "label": "Human Strong → Natural",
+      "source": "original_text",
+      "prediction": "strong_text",
+      "reference": "natural_text"
+    }
+  ],
+  "code_sha256": {
+    "human_sari.py": "03b27c37269d1458f68a25f0d386b97d0899b5579ded0114df8c06d5fa08288a",
+    "text_similarity.py": "f86c2b1d91c7ae13fdfc6012a16fa375a9a3906dc11dc9db949e825714bfa42b"
+  },
+  "artifacts": [
+    "human_sari.md",
+    "human_sari.csv"
+  ]
+}

@@ -30,6 +30,18 @@ O corpus é obtido de `effective_config.corpus.path`. Se a execução foi copiad
 
 Por padrão, as referências humanas são `natural_text` e `strong_text`; use `--natural-field` e `--strong-field` para outros nomes.
 
+## Baselines SARI do corpus humano
+
+O módulo independente `metrics.human_sari` calcula quatro comparações, sempre com fonte Original: cópia do Original contra Natural; cópia contra Strong; Natural contra Strong; Strong contra Natural. Reutiliza a função SARI dos experimentos, sem carregar BERT, acessar APIs ou exigir extras.
+
+```sh
+uv run python -m metrics.human_sari -i input/PorSimplesSent/corpus.jsonl
+```
+
+Cria `human_sari.md` (médias e desvio-padrão amostral), `human_sari.csv` (escores por documento) e `human_sari_manifest.json` (timestamp, comparações e hashes do corpus/código), na pasta do corpus. Use `--output-dir` para outro destino ou `--overwrite` para recalcular arquivos existentes. O corpus original nunca é alterado.
+
+A entrada deve conter `production_id`, `original_text`, `natural_text` e `strong_text`. Campos ausentes/vazios, IDs duplicados e JSON inválido interrompem o cálculo, sem substituir ausências por zero. As médias atribuem peso igual a cada documento, na escala 0–100. SARI não é simétrico; o valor humano cruzado não é teto de qualidade. Para comparar com IA, use a mesma referência e os mesmos IDs do CSV, especialmente quando houver falhas nas runs.
+
 ## Comparações
 
 | Métrica | Fonte | Candidata | Referência |

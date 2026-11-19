@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+import tempfile
 import time
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -101,24 +102,63 @@ def append_jsonl(path: Path, record: dict[str, object]) -> None:
         os.fsync(file.fileno())
 
 
+LEGACY_METADATA_COLUMNS = (
+    "run_id",
+    "document_id",
+    "content_hash",
+    "execution_status",
+    "termination_reason",
+    "elapsed_time",
+    "input_tokens",
+    "output_tokens",
+    "llm_calls",
+)
+METADATA_COLUMNS = LEGACY_METADATA_COLUMNS + (
+    "retry_wait_seconds",
+    "elapsed_without_backoff",
+)
+
+
 def ensure_metadata_header(path: Path) -> None:
-    if path.exists() and path.stat().st_size > 0:
+    if not path.exists() or path.stat().st_size == 0:
+        with path.open("w", encoding="utf-8", newline="") as file:
+            csv.writer(file).writerow(METADATA_COLUMNS)
         return
-    with path.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(
-            [
-                "run_id",
-                "document_id",
-                "content_hash",
-                "execution_status",
-                "termination_reason",
-                "elapsed_time",
-                "input_tokens",
-                "output_tokens",
-                "llm_calls",
-            ]
-        )
+
+    temporary_path = None
+    try:
+        with path.open("r", encoding="utf-8", newline="") as source:
+            reader = csv.reader(source, strict=True)
+            header = tuple(next(reader, ()))
+            if header == METADATA_COLUMNS:
+                return
+            if header != LEGACY_METADATA_COLUMNS:
+                raise ValueError(
+                    f"Cabeçalho de metadados desconhecido em {path}; "
+                    "arquivo preservado."
+                )
+            # O temporário fica no mesmo filesystem para permitir replace atômico.
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", newline="",
+                dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
+                delete=False,
+            ) as destination:
+                temporary_path = Path(destination.name)
+                writer = csv.writer(destination)
+                writer.writerow(METADATA_COLUMNS)
+                for row in reader:
+                    if len(row) != len(LEGACY_METADATA_COLUMNS):
+                        raise ValueError(
+                            f"Linha de metadados inválida em {path}, "
+                            f"linha {reader.line_num}; arquivo preservado."
+                        )
+                    writer.writerow([*row, "", ""])
+                destination.flush()
+                os.fsync(destination.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def load_corpus(config: EffectiveConfig) -> list[DocumentInput]:
@@ -203,6 +243,8 @@ def main() -> None:
     if args.resume and args.run_id is None:
         parser.error("--resume exige --run-id.")
 
+    from core.timing import track_document_retries
+
     cli = CliOverrides(
         model=args.model,
         corpus_path=args.corpus,
@@ -257,13 +299,18 @@ def main() -> None:
             f"[{index}/{len(pending)}]"
         )
         start_time = time.perf_counter()
-        result = LinguagemSimplesGraph.run(
-            document,
-            config=run_config,
-            clients=clients,
-            run_id=run_id,
-        )
+        with track_document_retries(
+            (clients.analyzer, clients.simplifier, clients.evaluator)
+        ) as timing:
+            result = LinguagemSimplesGraph.run(
+                document,
+                config=run_config,
+                clients=clients,
+                run_id=run_id,
+            )
         elapsed = time.perf_counter() - start_time
+        retry_wait_seconds = timing.retry_wait_seconds
+        elapsed_without_backoff = max(0.0, elapsed - retry_wait_seconds)
 
         append_jsonl(results_path, result.model_dump(mode="json"))
         with metadata_path.open("a", encoding="utf-8", newline="") as file:
@@ -279,6 +326,8 @@ def main() -> None:
                     result.usage.input_tokens,
                     result.usage.output_tokens,
                     result.usage.llm_calls,
+                    f"{retry_wait_seconds:.4f}",
+                    f"{elapsed_without_backoff:.4f}",
                 ]
             )
 
@@ -286,6 +335,8 @@ def main() -> None:
         print(f"\tStatus: {result.execution_status.value}")
         print(f"\tMotivo: {result.termination_reason.value}")
         print(f"\tTempo: {elapsed:.4f}s")
+        print(f"\tBackoff sem chamadas ativas: {retry_wait_seconds:.4f}s")
+        print(f"\tTempo sem esse backoff: {elapsed_without_backoff:.4f}s")
 
     session_elapsed = time.perf_counter() - session_start
     documents, input_tokens, output_tokens, llm_calls = summarize_results(

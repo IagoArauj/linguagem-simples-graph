@@ -272,6 +272,18 @@ As opções incluem:
 - `--run-id`: identificador de uma execução;
 - `--resume`: retomada de uma execução existente.
 
+### Santos Dumont (Slurm + Ray + vLLM)
+
+A pasta [`santos_dumont/`](santos_dumont/README.md) contém um job multinó para executar somente o pipeline de simplificação, sem frontend ou cálculo de métricas. A partir da raiz do projeto no cluster:
+
+```bash
+sbatch santos_dumont/submit.sbatch
+```
+
+Antes de submeter, execute `bash santos_dumont/prepare_env.sh` em um nó de login Linux com internet. O script instala o extra UV `hpc` com `uv sync --locked --extra hpc --no-dev --python 3.12` no `.venv` compartilhado. Esse extra é separado de `metrics`; não use `--all-extras` nesse ambiente.
+
+Usa quatro nós GPU, o `.venv` previamente preparado e pesos locais de Qwen3-32B. Nos nós de computação, UV e Hugging Face ficam em modo offline e nenhuma dependência é instalada. O pipeline inicia uma única vez, no head, após verificar o cluster Ray e o endpoint vLLM. Consulte o README da pasta para caminhos, topologia TP/PP, dependências GPU, logs e retomada.
+
 ## Corpus
 
 Cada item deve conter pelo menos um identificador e um texto. Os nomes desses campos são definidos no YAML.
@@ -342,6 +354,18 @@ Uma execução técnica pode terminar corretamente e ainda produzir uma versão 
 
 Os adaptadores normalizam o conteúdo, o identificador da requisição, o motivo de término e o uso de tokens. Quando o backend não informa uso, os campos correspondentes são persistidos como `null`; eles não são convertidos em zero medido. O CSV deixa esses campos vazios e o resumo mantém `null` se qualquer documento tiver uso desconhecido.
 
+### Tempos por documento
+
+O CSV `metadata_per_text.csv` e o console apresentam os tempos em segundos:
+
+- `elapsed_time`: tempo total da execução do grafo, medido com `time.perf_counter`, incluindo retries e backoff;
+- `retry_wait_seconds`: tempo em que pelo menos uma chamada dos clientes do documento está em backoff e **nenhuma outra chamada está ativa**. Intervalos sobrepostos são contabilizados uma única vez; backoff simultâneo a uma chamada ativa não é descontado;
+- `elapsed_without_backoff`: `max(0, elapsed_time - retry_wait_seconds)`, calculado antes do arredondamento para quatro casas decimais.
+
+As duas novas colunas são acrescentadas ao final do CSV. O acompanhamento envolve os clientes analisador, simplificador e avaliador durante a execução do grafo de cada documento. Esses tempos não alteram os resultados JSONL nem os schemas.
+
+**O tempo sem esse backoff não é tempo de inferência pura**: continua incluindo chamadas que falharam, rede, processamento local e coordenação do workflow. Ele exclui somente o backoff sem chamadas ativas observado pelo acompanhamento.
+
 ## Retomada
 
 Use o mesmo `run_id` e a mesma configuração efetiva:
@@ -364,6 +388,8 @@ A retomada é recusada se houver mudança incompatível em:
 
 Documentos já presentes em `results.jsonl` não são processados novamente. O hash de cada documento também é conferido.
 
+Na retomada, o cabeçalho legado conhecido de `metadata_per_text.csv` é migrado automaticamente para acrescentar `retry_wait_seconds` e `elapsed_without_backoff`. A migração preserva os valores das linhas anteriores e deixa as duas novas colunas **vazias no histórico**: esses tempos são desconhecidos, não zero, e não podem ser reconstruídos a partir do tempo total. A gravação usa um arquivo temporário no mesmo diretório e substituição atômica; cabeçalhos desconhecidos ou linhas legadas malformadas são recusados sem sobrescrever o arquivo original.
+
 ## Testes
 
 A suíte usa o provider simulado e implementações locais falsas dos endpoints. Ela não acessa APIs externas.
@@ -384,6 +410,7 @@ Os testes verificam:
 - compatibilidade de retomada;
 - fábrica de clientes, parâmetros explícitos e modelos por papel;
 - retries apenas para falhas transitórias;
+- integração dos tempos de backoff com o CSV e o console, migração atômica de metadados legados e preservação de históricos desconhecidos (`tests/test_retry_metadata.py`);
 - falhas de autenticação sem repetição;
 - parsing e validação de saída estruturada;
 - execução dos mesmos nós com OpenRouter, endpoint local e simulador;
@@ -395,6 +422,31 @@ Os testes verificam:
 - disponibilidade das opções da CLI.
 
 ## Métricas
+
+### Análise conjunta e gráficos em lote
+
+`metrics.analyze` lê os manifestos, resultados e métricas já calculadas para produzir gráficos por execução, gráficos comparativos e tabelas Markdown com médias e número de observações. Não chama modelos nem recalcula métricas.
+
+```sh
+uv sync --extra analysis --python 3.12
+uv run --extra analysis --python 3.12 python -m metrics.analyze \
+  --run-dir \
+    output/porsimplessent-runs/73734703-0884-4d5f-9a9e-7f29e07ad877 \
+    output/porsimplessent-runs/6eea9265-437d-4e9c-bc16-dcd0a94cbcb8
+```
+
+A saída fica em uma nova pasta `output/analyses/<timestamp>_<id>/`, com `means.md`, CSVs, PNGs e um `manifest.json` que registra criação, pastas e hashes dos arquivos usados. Use `--no-plots` para gerar apenas tabelas e testes estatísticos. Consulte [metrics/ANALYSIS.md](metrics/ANALYSIS.md) para critérios de comparação, fontes opcionais e interpretação dos gráficos.
+
+As novas análises incluem também `execution_report.md` e CSVs com médias de chamadas, tokens e tempos (incluindo tempo sem backoff), cobertura dos dados, status parciais/falhas, limites de revisões, tipos de erro e ranking por branch. O relatório operacional sempre considera todos os desfechos, mesmo com `--approved-only`.
+
+Para gerar **somente essas tabelas** a partir de uma análise antiga, sem refazer gráficos ou métricas:
+
+```sh
+uv run python -m metrics.analyze_execution \
+  --analysis-dir output/analyses/20260918T175626_eabde156
+```
+
+Também aceita `--run-dir` com uma ou várias pastas de execução. Cria uma pasta nova em `output/analyses/execution_<timestamp>_<id>/`, com manifesto próprio; os dados anteriores são preservados. Não requer corpus nem dependências de gráficos. Ausências de tokens/tempos permanecem desconhecidas, e falhas propagadas do analisador são separadas de falhas próprias das branches. Veja [metrics/ANALYSIS.md](metrics/ANALYSIS.md).
 
 ### BERTScore, ROUGE-L e SARI
 
@@ -412,12 +464,15 @@ Produz `human_bertscore.csv` na pasta do corpus e `semantic_metrics.csv` em cada
 
 `compute_metrics.py` exige um arquivo de entrada e aceita listas JSON ou o JSONL produzido pelo workflow. Se `--output` for omitido, o resultado será salvo como `metrics.jsonl` na mesma pasta da entrada. Resultados com apenas alguns ramos válidos recebem `status: partial`, e somente as simplificações disponíveis são processadas. Documentos sem nenhuma simplificação válida recebem `status: skipped` e não interrompem a execução, mesmo com `--fail-fast`. Para computar as métricas, é necessária a instalação do pacote de métricas [NILC-Metrix](https://doi.org/10.1007/s10579-023-09693-w), disponível [neste repositório do GitHub](https://github.com/sidleal/nilcmetrix).
 
-Exemplo:
+O argumento `--workers N` controla quantos textos são processados em paralelo (padrão: 2, mínimo: 1, sem o antigo limite de 3). Cada worker calcula as três branches de um texto sequencialmente e, ao terminar, fica disponível para outro texto sem esperar os demais. O JSONL é gravado em ordem de conclusão, não necessariamente na ordem de entrada; `item_index` mantém a identificação para `--resume`. Com `--fail-fast`, novos textos deixam de ser agendados após a detecção do erro; tarefas já iniciadas podem terminar, mas seus resultados ainda não coletados não são gravados e serão reprocessados na retomada.
+
+Exemplo com quatro textos em paralelo:
 
 ```sh
 uv run compute_metrics.py \
   --input output/runs/UUID_DA_EXECUCAO/results.jsonl \
-  --nilc-metrix-folder /caminho/para/nilc-metrix
+  --nilc-metrix-folder /caminho/para/nilc-metrix \
+  --workers 4
 ```
 
 Consulte os argumentos disponíveis:

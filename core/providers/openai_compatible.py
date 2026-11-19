@@ -92,6 +92,7 @@ class OpenAICompatibleModelClient(RetryingModelClient):
                 )
                 runnable = self._chat.with_structured_output(
                     schema,
+                    method="json_schema",
                     include_raw=True,
                 )
                 result = runnable.invoke(messages)

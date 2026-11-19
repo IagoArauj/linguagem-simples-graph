@@ -165,6 +165,57 @@ def test_openai_adapter_uses_explicit_settings_and_disables_sdk_retries(
     assert response.finish_reason == "stop"
 
 
+@pytest.mark.parametrize("client_type", [OpenAICompatibleModelClient, OpenRouterModelClient])
+def test_structured_output_explicitly_uses_json_schema(
+    monkeypatch: pytest.MonkeyPatch,
+    client_type,
+) -> None:
+    calls = []
+
+    class StructuredChat(FakeChatOpenAI):
+        def with_structured_output(self, schema, **kwargs):
+            calls.append((schema, kwargs))
+            return self
+
+        def invoke(self, messages):
+            return {
+                "raw": FakeMessage(ANALYSIS_OK),
+                "parsed": AnalysisResult.model_validate_json(ANALYSIS_OK),
+                "parsing_error": None,
+            }
+
+    monkeypatch.setattr(adapter_module, "ChatOpenAI", StructuredChat)
+    client = client_type(
+        model="test-model",
+        base_url="https://example.com/v1",
+        api_key="test-secret",
+        supports_structured_output=True,
+    )
+    response = client.invoke(
+        [HumanMessage(content="Texto original.")],
+        response_schema=AnalysisResult,
+    )
+
+    assert calls == [(AnalysisResult, {"method": "json_schema", "include_raw": True})]
+    assert isinstance(response.parsed, AnalysisResult)
+    assert response.usage == TokenUsage(4, 2, 6)
+    assert response.request_id == "request-123"
+
+
+def test_structured_capability_without_schema_still_returns_free_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(adapter_module, "ChatOpenAI", FakeChatOpenAI)
+    client = OpenAICompatibleModelClient(
+        model="test-model",
+        base_url="https://example.com/v1",
+        supports_structured_output=True,
+    )
+    response = client.invoke([HumanMessage(content="Simplifique.")])
+    assert response.content == "Texto simplificado."
+    assert response.parsed is None
+
+
 def make_backend_config(provider: ModelProvider) -> RunConfig:
     api_key_env = "OPENROUTER_API_KEY" if provider == ModelProvider.OPENROUTER else None
     base_url = (

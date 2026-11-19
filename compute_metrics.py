@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 import time
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
@@ -270,52 +270,49 @@ def _compute_item_metrics(
     item: dict[str, Any],
     nilc_metrix_folder: str | Path,
     script_to_run: str,
-    workers: int,
-    progress_bar: tqdm[Any],
-    item_index: int,
-    total_items: int,
 ) -> dict[str, Any]:
-    """
-    Calcula as três simplificações de um item, executando até ``workers``
-    scripts simultaneamente.
-    """
-    metrics: dict[str, Any] = {}
-    completed_stages = 0
-
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        future_to_stage: dict[Future[dict[str, Any]], str] = {}
-
-        available_stages = [
-            (stage_name, field_name)
-            for stage_name, field_name in STAGES
-            if isinstance(item[field_name], str) and item[field_name].strip()
-        ]
-
-        for stage_name, field_name in available_stages:
-            future = executor.submit(
-                compute_nilc_metrix,
-                item[field_name],
-                nilc_metrix_folder,
-                script_to_run,
-                field_name
-            )
-            future_to_stage[future] = stage_name
-
-        for future in as_completed(future_to_stage):
-            stage_name = future_to_stage[future]
-            metrics[stage_name] = future.result()
-            completed_stages += 1
-
-            progress_bar.set_description(
-                f"Item {item_index}/{total_items} "
-                f"| métricas {completed_stages}/{len(available_stages)}"
-            )
-
-    # Mantém a ordem estável das chaves no JSONL.
+    """Calcula sequencialmente as simplificações disponíveis de um item."""
     return {
-        stage_name: metrics[stage_name]
-        for stage_name, _ in available_stages
+        stage_name: compute_nilc_metrix(
+            item[field_name], nilc_metrix_folder, script_to_run, field_name
+        )
+        for stage_name, field_name in STAGES
+        if isinstance(item[field_name], str) and item[field_name].strip()
     }
+
+
+def _process_item(
+    raw_item: Any,
+    index: int,
+    nilc_metrix_folder: str | Path,
+    script_to_run: str,
+) -> tuple[dict[str, Any], Exception | None]:
+    """Processa um texto completo no worker, sem escrever no JSONL."""
+    start_time = time.perf_counter()
+    error = None
+    try:
+        item = _validate_item(raw_item, index)
+        metrics = _compute_item_metrics(item, nilc_metrix_folder, script_to_run)
+        missing_stages = [name for name, _ in STAGES if name not in metrics]
+        record = {
+            "item_index": index,
+            "run_id": item.get("run_id"),
+            "document_id": item.get("document_id"),
+            "content_hash": item.get("content_hash"),
+            "status": (
+                "skipped" if not metrics else "partial" if missing_stages else "success"
+            ),
+            "missing_stages": missing_stages,
+            **metrics,
+        }
+        if not metrics:
+            record["reason"] = "no_valid_simplifications"
+    except Exception as exc:
+        error = exc
+        record = {"item_index": index, "status": "error", "error": str(exc)}
+
+    record["processing_seconds"] = round(time.perf_counter() - start_time, 3)
+    return record, error
 
 
 def compute_metrics(
@@ -332,15 +329,13 @@ def compute_metrics(
     """
     Calcula métricas somente para as três simplificações.
 
-    O paralelismo ocorre dentro de cada item: as simplificações simples,
-    moderada e agressiva podem ser processadas simultaneamente.
+    Até ``workers`` textos são processados simultaneamente. Cada worker
+    calcula sequencialmente as simplificações simples, moderada e agressiva.
 
     Cada item concluído é imediatamente gravado e sincronizado no JSONL.
     """
-    if workers < 1 or workers > len(STAGES):
-        raise ValueError(
-            f"--workers deve estar entre 1 e {len(STAGES)}."
-        )
+    if workers < 1:
+        raise ValueError("--workers deve ser maior ou igual a 1.")
 
     input_path = Path(input_file).expanduser().resolve()
     output_path = (
@@ -422,122 +417,82 @@ def compute_metrics(
     print(f"Itens encontrados: {total_items}")
     print(f"Itens já concluídos: {skipped_items}")
     print(f"Itens pendentes: {len(pending_items)}")
-    print(f"Execuções paralelas por item: {workers}")
+    print(f"Textos processados em paralelo: {workers}")
     print()
 
-    with output_path.open(output_mode, encoding="utf-8") as output:
-        progress_bar = tqdm(
-            pending_items,
+    with (
+        output_path.open(output_mode, encoding="utf-8") as output,
+        tqdm(
             total=len(pending_items),
             desc="Calculando métricas",
             unit="item",
             dynamic_ncols=True,
-        )
+        ) as progress_bar,
+        ThreadPoolExecutor(max_workers=workers) as executor,
+    ):
+        pending = iter(pending_items)
+        futures: set[Future[tuple[dict[str, Any], Exception | None]]] = set()
 
-        for processed_position, (index, raw_item) in enumerate(
-            progress_bar,
-            start=1,
-        ):
-            item_start_time = time.perf_counter()
+        def submit_next() -> None:
+            entry = next(pending, None)
+            if entry is not None:
+                index, raw_item = entry
+                futures.add(executor.submit(
+                    _process_item, raw_item, index, nilc_metrix_folder, script_to_run
+                ))
 
-            try:
-                item = _validate_item(raw_item, index)
-                available_stages = [
-                    stage_name
-                    for stage_name, field_name in STAGES
-                    if isinstance(item[field_name], str) and item[field_name].strip()
-                ]
-                missing_stages = [
-                    stage_name
-                    for stage_name, _ in STAGES
-                    if stage_name not in available_stages
-                ]
+        for _ in range(min(workers, len(pending_items))):
+            submit_next()
 
-                if not available_stages:
-                    skipped_without_text += 1
-                    item_elapsed = time.perf_counter() - item_start_time
-                    _write_jsonl_record(
-                        output,
+        processed_count = 0
+        try:
+            while futures:
+                done, futures = wait(futures, return_when=FIRST_COMPLETED)
+                first_error = None
+                for future in done:
+                    record, error = future.result()
+                    _write_jsonl_record(output, record)
+                    index = record["item_index"]
+                    status = record["status"]
+                    if status == "success":
+                        successful_items += 1
+                    elif status == "partial":
+                        partial_items += 1
+                    elif status == "skipped":
+                        skipped_without_text += 1
+                        progress_bar.write(
+                            f"Item {index} ignorado: nenhuma simplificação válida."
+                        )
+                    else:
+                        failed_items += 1
+                        progress_bar.write(f"Erro no item {index}: {error}")
+                        if first_error is None:
+                            first_error = error
+
+                    processed_count += 1
+                    remaining_items = len(pending_items) - processed_count
+                    elapsed_time = time.perf_counter() - start_time
+                    average_time = elapsed_time / processed_count
+                    progress_bar.update(1)
+                    progress_bar.set_postfix(
                         {
-                            "item_index": index,
-                            "run_id": item.get("run_id"),
-                            "document_id": item.get("document_id"),
-                            "content_hash": item.get("content_hash"),
-                            "status": "skipped",
-                            "reason": "no_valid_simplifications",
-                            "processing_seconds": round(item_elapsed, 3),
-                            "missing_stages": missing_stages,
+                            "restantes": remaining_items,
+                            "média/item": format_duration(average_time),
+                            "último": format_duration(record["processing_seconds"]),
+                            "faltante": format_duration(average_time * remaining_items),
+                            "erros": failed_items,
                         },
+                        refresh=True,
                     )
-                    progress_bar.write(
-                        f"Item {index} ignorado: nenhuma simplificação válida."
-                    )
-                    continue
 
-                metrics = _compute_item_metrics(
-                    item=item,
-                    nilc_metrix_folder=nilc_metrix_folder,
-                    script_to_run=script_to_run,
-                    workers=workers,
-                    progress_bar=progress_bar,
-                    item_index=index,
-                    total_items=total_items,
-                )
-
-                item_elapsed = time.perf_counter() - item_start_time
-
-                record = {
-                    "item_index": index,
-                    "run_id": item.get("run_id"),
-                    "document_id": item.get("document_id"),
-                    "content_hash": item.get("content_hash"),
-                    "status": "partial" if missing_stages else "success",
-                    "processing_seconds": round(item_elapsed, 3),
-                    "missing_stages": missing_stages,
-                    **metrics,
-                }
-
-                _write_jsonl_record(output, record)
-                if missing_stages:
-                    partial_items += 1
-                else:
-                    successful_items += 1
-
-            except Exception as exc:
-                failed_items += 1
-                item_elapsed = time.perf_counter() - item_start_time
-
-                error_record = {
-                    "item_index": index,
-                    "status": "error",
-                    "processing_seconds": round(item_elapsed, 3),
-                    "error": str(exc),
-                }
-
-                _write_jsonl_record(output, error_record)
-                progress_bar.write(f"Erro no item {index}: {exc}")
-
-                if fail_fast:
-                    raise
-
-            finally:
-                remaining_items = len(pending_items) - processed_position
-                elapsed_time = time.perf_counter() - start_time
-                average_time = elapsed_time / processed_position
-                estimated_remaining = average_time * remaining_items
-                current_item_time = time.perf_counter() - item_start_time
-
-                progress_bar.set_description("Calculando métricas")
-                progress_bar.set_postfix(
-                    {
-                        "restantes": remaining_items,
-                        "média/item": format_duration(average_time),
-                        "último": format_duration(current_item_time),
-                        "faltante": format_duration(estimated_remaining),
-                        "erros": failed_items,
-                    },
-                    refresh=True,
-                )
+                if fail_fast and first_error is not None:
+                    raise first_error
+                for _ in done:
+                    submit_next()
+        finally:
+            # Tarefas já iniciadas terminam; as que ainda não começaram são canceladas.
+            for future in futures:
+                future.cancel()
 
     total_elapsed = time.perf_counter() - start_time
     average_time = total_elapsed / len(pending_items)
@@ -597,11 +552,11 @@ def parse_arguments() -> argparse.Namespace:
         "--workers",
         "-w",
         type=int,
-        choices=range(1, len(STAGES) + 1),
         default=2,
-        metavar="{1,2,3}",
+        metavar="N",
         help=(
-            "Quantidade de métricas executadas simultaneamente por item. "
+            "Quantidade de textos processados simultaneamente (mínimo: 1). "
+            "As três simplificações de cada texto são processadas sequencialmente. "
             "Padrão: 2"
         ),
     )

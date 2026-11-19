@@ -17,6 +17,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Stack GPU separado: Linux x86_64/Python 3.12; não instala CUDA no macOS.
+# vLLM fixa torch/torchaudio/torchvision compatíveis nas dependências transitivas.
+hpc = [
+    "vllm==0.8.5.post1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
+    "ray[default]==2.43.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
+    "transformers>=4.51.1,<4.52; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
+]
+analysis = [
+    "pandas>=2.2,<3",
+    "numpy>=1.26,<3",
+    "matplotlib>=3.9,<4",
+    "scipy>=1.14,<2",
+]
 metrics = [
     "bert-score>=0.3.13,<0.4",
     "transformers>=4.38,<5",
@@ -28,7 +41,10 @@ metrics = [
 ]
 
 [tool.uv]
+# Serving GPU e BERTScore legado (macOS Intel) usam stacks distintos.
+conflicts = [[{ extra = "hpc" }, { extra = "metrics" }]]
 required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
     "sys_platform == 'darwin' and platform_machine == 'x86_64' and python_version == '3.12'",
 ]
 

@@ -7,10 +7,13 @@ import time
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ValidationError
+
+from core.timing import RetryTiming
 
 StructuredSchema = type[BaseModel] | Mapping[str, Any]
 
@@ -96,6 +99,7 @@ class RetryingModelClient(ABC):
         self.technical_retries = technical_retries
         self.retry_backoff_seconds = retry_backoff_seconds
         self._sleep = sleep
+        self.retry_timing: RetryTiming | None = None
 
     def invoke(
         self,
@@ -106,19 +110,22 @@ class RetryingModelClient(ABC):
         text_fallback: bool = True,
     ) -> ModelResponse:
         schema = _select_schema(response_schema, structured_output)
-        for attempt in range(self.technical_retries + 1):
-            try:
-                return self._invoke_once(
-                    messages,
-                    response_schema=schema,
-                    text_fallback=text_fallback,
-                )
-            except TransientError:
-                if attempt >= self.technical_retries:
-                    raise
-                delay = self.retry_backoff_seconds * (2**attempt)
-                if delay:
-                    self._sleep(delay)
+        timing = self.retry_timing
+        with timing.invocation() if timing is not None else nullcontext():
+            for attempt in range(self.technical_retries + 1):
+                try:
+                    return self._invoke_once(
+                        messages,
+                        response_schema=schema,
+                        text_fallback=text_fallback,
+                    )
+                except TransientError:
+                    if attempt >= self.technical_retries:
+                        raise
+                    delay = self.retry_backoff_seconds * (2**attempt)
+                    if delay:
+                        with timing.backoff() if timing is not None else nullcontext():
+                            self._sleep(delay)
         raise AssertionError("loop de retry terminou sem resposta")
 
     def complete(
