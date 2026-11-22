@@ -36,7 +36,7 @@ models:
     provider: openai_compatible
     base_url: http://127.0.0.1:8000/v1
     api_key_env: VLLM_API_KEY
-    request_timeout_seconds: 180
+    request_timeout_seconds: 600
     technical_retries: 2
     retry_backoff_seconds: 2
     temperature: 0.1
@@ -47,7 +47,7 @@ models:
     provider: openai_compatible
     base_url: http://127.0.0.1:8000/v1
     api_key_env: VLLM_API_KEY
-    request_timeout_seconds: 180
+    request_timeout_seconds: 600
     technical_retries: 2
     retry_backoff_seconds: 2
     temperature: 0.3
@@ -58,7 +58,7 @@ models:
     provider: openai_compatible
     base_url: http://127.0.0.1:8000/v1
     api_key_env: VLLM_API_KEY
-    request_timeout_seconds: 180
+    request_timeout_seconds: 600
     technical_retries: 2
     retry_backoff_seconds: 2
     temperature: 0.0
