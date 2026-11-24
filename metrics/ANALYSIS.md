@@ -2,6 +2,20 @@
 
 `metrics.analyze` transforma os arquivos já calculados em tabelas e gráficos PNG, sem chamar APIs, executar NILC-Metrix ou carregar modelos BERT. Reproduz as famílias de análises do notebook `Análise.ipynb`, corrigindo o pareamento por posição e a confusão entre métricas humanas e de IA.
 
+## Comparação pareada Single-Agent × SIMPLA
+
+Use o módulo offline `metrics.paired`, com o extra `analysis` (inclui `statsmodels`):
+
+```sh
+uv run --extra analysis python -m metrics.paired \
+  --single-results output/single-agent/openai_gpt-oss-120b_iib_20260924T183527597272Z_33c2c772.jsonl \
+  --multi-run-dir output/porsimplessent-liquid-runs/1b4433d4-5f73-465e-8050-a42f84bc51e2
+```
+
+Para corrigir Holm entre os cinco modelos, passe os cinco arquivos de **geração** Single-Agent e as cinco pastas SIMPLA no **mesmo comando**. O modelo é identificado pelos registros e pelo manifesto, não pela ordem dos argumentos. Forneça uma execução por arquitetura/modelo; não misture repetições do mesmo modelo. Os arquivos Single-Agent irmãos `*_metrics.jsonl` e `*_semantic_metrics.csv` são descobertos automaticamente. O corpus padrão é PorSimplesSent; `--corpus` permite indicar outra cópia. `--no-plots` omite os PNGs.
+
+A saída em `output/analyses/paired_*` (ou `--output-dir`) contém `paired_summary.csv` com cobertura por métrica, `paired_deltas.csv` com os pares e diferenças brutas, `paired_excluded.csv` com IDs e motivos, `paired_tests.tex`, gráficos, notas metodológicas e manifesto com hashes das fontes. A análise principal e a condicionada à aprovação são separadas. O SARI corresponde a `sari_multi_reference`, com Natural e Strong juntas. Não roda inferência nem recalcula métricas; lacunas nas fontes permanecem sem pares.
+
 ## Instalação
 
 ```sh
